@@ -1,0 +1,75 @@
+# ====================
+# Team Samsara Hive v2 - Docker Compose
+# ====================
+
+version: '3.8'
+
+services:
+  hive-bot:
+    # Build configuration
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    # Container name
+    container_name: teamsamsara-hive-bot
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Environment
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Production
+      - TZ=UTC
+    
+    # Volume mounts
+    volumes:
+      # Database persistence
+      - ./data:/app/data
+      
+      # Production configuration (mount from host)
+      # Create this file on your server with actual credentials
+      - ./appsettings.Production.json:/app/appsettings.Production.json:ro
+      
+      # Logs (optional - for debugging)
+      - ./logs:/app/logs
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "TeamSamsara.Hive.Bot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits (optional but recommended)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+# ====================
+# Networks (optional - for future expansion)
+# ====================
+networks:
+  default:
+    name: hive-network
+
+# ====================
+# Volumes (named volumes for better management)
+# ====================
+volumes:
+  hive-data:
+    driver: local

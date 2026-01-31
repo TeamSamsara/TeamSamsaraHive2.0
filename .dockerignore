@@ -1,0 +1,119 @@
+# ====================
+# .dockerignore - Excludes files from Docker build context
+# ====================
+
+# ====================
+# Git
+# ====================
+.git
+.gitignore
+.gitattributes
+
+# ====================
+# Documentation
+# ====================
+*.md
+docs/
+README.md
+LICENSE
+
+# ====================
+# .NET Build Outputs
+# ====================
+**/bin/
+**/obj/
+**/out/
+[Dd]ebug/
+[Rr]elease/
+[Bb]uild/
+
+# ====================
+# Database Files (Don't include in image)
+# ====================
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+
+# ====================
+# Sensitive Configuration (Don't include in image)
+# ====================
+# These should be mounted as volumes or set via environment variables
+appsettings.Development.json
+appsettings.Staging.json
+appsettings.Production.json
+appsettings.*.json
+!appsettings.json
+secrets.json
+*.secrets.json
+
+# ====================
+# IDE Files
+# ====================
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.cache
+*.vsidx
+
+# ====================
+# OS Files
+# ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ====================
+# Test Files
+# ====================
+**/[Tt]ests/
+**/[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+
+# ====================
+# NuGet
+# ====================
+*.nupkg
+*.snupkg
+**/packages/
+
+# ====================
+# Logs
+# ====================
+*.log
+logs/
+[Ll]og/
+[Ll]ogs/
+
+# ====================
+# Docker
+# ====================
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# ====================
+# CI/CD
+# ====================
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+
+# ====================
+# Backup & Temp Files
+# ====================
+*.bak
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
