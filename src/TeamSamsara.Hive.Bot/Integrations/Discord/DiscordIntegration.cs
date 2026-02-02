@@ -17,7 +17,7 @@ public class DiscordIntegration : BaseIntegration
     private int _reconnectAttempts;
     private bool _isReconnecting;
     private string _botToken = string.Empty;
-
+    public DiscordSocketClient Client => _client;
     public override string IntegrationName => "Discord";
 
     #region Constructor
