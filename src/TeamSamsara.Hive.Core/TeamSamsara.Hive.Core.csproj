@@ -7,7 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Humanizer" Version="3.0.1" />
+    <!-- Humanizer 3.0.1 is a broken NuGet release (no supported framework
+         assets), which breaks restore entirely. 2.14.1 is the last known-good
+         version and is fully compatible with net8.0. -->
+    <PackageReference Include="Humanizer" Version="2.14.1" />
     <PackageReference Include="JetBrains.Annotations" Version="2025.2.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.0" />

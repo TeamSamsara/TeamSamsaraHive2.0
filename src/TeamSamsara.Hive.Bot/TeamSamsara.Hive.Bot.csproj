@@ -14,7 +14,13 @@
     <PackageReference Include="Discord.Net.Commands" Version="3.16.0" />
     <PackageReference Include="Discord.Net.Interactions" Version="3.16.0" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
-    
+
+    <!-- Pin Humanizer.Core: 3.0.1 (and later 3.0.x) is a broken NuGet release
+         with no supported framework assets, which breaks restore for any
+         package (e.g. Discord.Net.Interactions) that transitively depends
+         on it. 2.14.1 is the last known-good version. -->
+    <PackageReference Include="Humanizer.Core" Version="2.14.1" />
+
     <!-- Entity Framework Core -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
@@ -22,29 +28,29 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    
+
     <!-- Validation -->
     <PackageReference Include="FluentValidation" Version="11.11.0" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
-    
+
     <!-- Configuration -->
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.2" />
-    
+
     <!-- Hosting -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
-    
+
     <!-- HTTP Client -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.2" />
-    
+
     <!-- JSON Serialization -->
     <PackageReference Include="System.Text.Json" Version="10.0.2" />
-    
+
     <!-- Logging -->
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.2" />
-    
+
     <!-- Structured Logging (Optional but recommended) -->
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
