@@ -4,6 +4,9 @@ using Microsoft.Extensions.Logging;
 using TeamSamsara.Hive.Bot.Configuration;
 using TeamSamsara.Hive.Bot.Integrations.Discord;
 using TeamSamsara.Hive.Bot.Integrations.Twitch;
+using TeamSamsara.Hive.Bot.Tickets;
+using TeamSamsara.Hive.Bot.Streams.Commands;
+using TeamSamsara.Hive.Bot.Notifications;
 
 using TeamSamsara.Hive.Core.Abstractions;
 
@@ -15,14 +18,6 @@ public class SystemOrchestrator : BaseOrchestrator
 {
     private readonly DiscordIntegration _discord;
     private readonly TwitchIntegration _twitch;
-    
-    // ConfigurationOrchestrator is now resolved via ServiceProvider when needed
-    // This prevents singleton -> scoped dependency issues
-    
-    // Future orchestrators (Phase 3-5)
-    // private readonly AnalyticsOrchestrator _analyticsOrchestrator;
-    // private readonly NotificationOrchestrator _notificationOrchestrator;
-    // private readonly TicketOrchestrator _ticketOrchestrator;
     
     public override string SystemName => "System";
 
@@ -68,18 +63,29 @@ public class SystemOrchestrator : BaseOrchestrator
             await configOrchestrator.InitializeAsync(cancellationToken);
             LogInfo("✅ Configuration System initialized");
             
-            // Phase 3-5: Future Systems
-            // LogInfo("Phase 3: Initializing Analytics System...");
+            // Phase 3: Initialize Ticket System
+            LogInfo("Phase 3: Initializing Ticket System...");
+            var ticketOrchestrator = ServiceProvider.GetRequiredService<TicketOrchestrator>();
+            await ticketOrchestrator.InitializeAsync(cancellationToken);
+            LogInfo("✅ Ticket System initialized");
+            
+            // Phase 4: Initialize Notification System
+            LogInfo("Phase 4: Initializing Notification System...");
+            var notificationOrchestrator = ServiceProvider.GetRequiredService<NotificationOrchestrator>();
+            await notificationOrchestrator.InitializeAsync(cancellationToken);
+            LogInfo("✅ Notification System initialized");
+            
+            // Phase 5: Register Stream Commands
+            LogInfo("Phase 5: Registering Stream Commands...");
+            var streamCommands = ServiceProvider.GetRequiredService<StreamCommandHandler>();
+            streamCommands.RegisterEventHandlers();
+            await streamCommands.RegisterCommandsAsync();
+            LogInfo("✅ Stream Commands registered");
+            
+            // Future: Full Analytics System
+            // LogInfo("Phase X: Initializing Analytics System...");
             // await _analyticsOrchestrator.InitializeAsync(cancellationToken);
             // LogInfo("✅ Analytics System initialized");
-            
-            // LogInfo("Phase 4: Initializing Notification System...");
-            // await _notificationOrchestrator.InitializeAsync(cancellationToken);
-            // LogInfo("✅ Notification System initialized");
-            
-            // LogInfo("Phase 5: Initializing Ticket System...");
-            // await _ticketOrchestrator.InitializeAsync(cancellationToken);
-            // LogInfo("✅ Ticket System initialized");
             
             LogInfo("===========================================");
             LogInfo("✅ System Initialization Complete");
@@ -107,15 +113,22 @@ public class SystemOrchestrator : BaseOrchestrator
             await configOrchestrator.StartAsync(cancellationToken);
             LogInfo("✅ Configuration System started");
             
-            // Future: Start other systems
+            // Start Ticket System
+            var ticketOrchestrator = ServiceProvider.GetRequiredService<TicketOrchestrator>();
+            await ticketOrchestrator.StartAsync(cancellationToken);
+            LogInfo("✅ Ticket System started");
+            
+            // Start Notification System
+            var notificationOrchestrator = ServiceProvider.GetRequiredService<NotificationOrchestrator>();
+            await notificationOrchestrator.StartAsync(cancellationToken);
+            LogInfo("✅ Notification System started");
+            
+            // Note: StreamMonitorService is registered as a HostedService in Program.cs,
+            // so the .NET host starts/stops it automatically - no manual call needed here.
+            
+            // Future: Start Analytics System
             // await _analyticsOrchestrator.StartAsync(cancellationToken);
             // LogInfo("✅ Analytics System started");
-            
-            // await _notificationOrchestrator.StartAsync(cancellationToken);
-            // LogInfo("✅ Notification System started");
-            
-            // await _ticketOrchestrator.StartAsync(cancellationToken);
-            // LogInfo("✅ Ticket System started");
             
             LogInfo("===========================================");
             LogInfo("✅ System Running - All Systems Operational");
@@ -138,15 +151,13 @@ public class SystemOrchestrator : BaseOrchestrator
         {
             // Stop in reverse order
             
-            // Future: Stop other systems
-            // await _ticketOrchestrator.StopAsync(cancellationToken);
-            // LogInfo("✅ Ticket System stopped");
+            var notificationOrchestrator = ServiceProvider.GetRequiredService<NotificationOrchestrator>();
+            await notificationOrchestrator.StopAsync(cancellationToken);
+            LogInfo("✅ Notification System stopped");
             
-            // await _notificationOrchestrator.StopAsync(cancellationToken);
-            // LogInfo("✅ Notification System stopped");
-            
-            // await _analyticsOrchestrator.StopAsync(cancellationToken);
-            // LogInfo("✅ Analytics System stopped");
+            var ticketOrchestrator = ServiceProvider.GetRequiredService<TicketOrchestrator>();
+            await ticketOrchestrator.StopAsync(cancellationToken);
+            LogInfo("✅ Ticket System stopped");
             
             var configOrchestrator = ServiceProvider.GetRequiredService<ConfigurationOrchestrator>();
             await configOrchestrator.StopAsync(cancellationToken);
@@ -168,11 +179,9 @@ public class SystemOrchestrator : BaseOrchestrator
     
     public override async Task<bool> HealthCheckAsync()
     {
-        // Check base health
         if (!await base.HealthCheckAsync())
             return false;
         
-        // Check integrations
         if (!await _discord.HealthCheckAsync())
         {
             LogWarning("Discord integration health check failed");
@@ -185,7 +194,6 @@ public class SystemOrchestrator : BaseOrchestrator
             return false;
         }
         
-        // Check Configuration System
         var configOrchestrator = ServiceProvider.GetRequiredService<ConfigurationOrchestrator>();
         if (!await configOrchestrator.HealthCheckAsync())
         {
@@ -193,10 +201,19 @@ public class SystemOrchestrator : BaseOrchestrator
             return false;
         }
         
-        // Future: Check other systems
-        // if (!await _analyticsOrchestrator.HealthCheckAsync()) return false;
-        // if (!await _notificationOrchestrator.HealthCheckAsync()) return false;
-        // if (!await _ticketOrchestrator.HealthCheckAsync()) return false;
+        var ticketOrchestrator = ServiceProvider.GetRequiredService<TicketOrchestrator>();
+        if (!await ticketOrchestrator.HealthCheckAsync())
+        {
+            LogWarning("Ticket system health check failed");
+            return false;
+        }
+        
+        var notificationOrchestrator = ServiceProvider.GetRequiredService<NotificationOrchestrator>();
+        if (!await notificationOrchestrator.HealthCheckAsync())
+        {
+            LogWarning("Notification system health check failed");
+            return false;
+        }
         
         return true;
     }

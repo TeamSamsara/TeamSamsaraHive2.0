@@ -11,8 +11,17 @@ using TeamSamsara.Hive.Bot.Configuration.Repositories;
 using TeamSamsara.Hive.Bot.Configuration.Services;
 using TeamSamsara.Hive.Bot.Integrations.Discord;
 using TeamSamsara.Hive.Bot.Integrations.Twitch;
-
+using TeamSamsara.Hive.Bot.Tickets;
+using TeamSamsara.Hive.Bot.Tickets.Data;
+using TeamSamsara.Hive.Bot.Tickets.Repositories;
+using TeamSamsara.Hive.Bot.Tickets.Services;
+using TeamSamsara.Hive.Bot.Streams.Commands;
+using TeamSamsara.Hive.Bot.Streams.Data;
+using TeamSamsara.Hive.Bot.Streams.Repositories;
+using TeamSamsara.Hive.Bot.Streams.Services;
+using TeamSamsara.Hive.Bot.Notifications;
 using TeamSamsara.Hive.Core.EventBus;
+using TeamSamsara.Hive.Core.Workflows.Abstractions;
 
 // Determine environment
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -43,27 +52,7 @@ var host = Host.CreateDefaultBuilder(args)
         // ═══════════════════════════════════════════════════════
         services.AddSingleton<EventBus>();
         services.AddSingleton<Router>();
-        
-        // Memory cache for repository caching
-        services.AddMemoryCache();
-        
-        // ═══════════════════════════════════════════════════════
-        // DATABASE (Configuration System)
-        // ═══════════════════════════════════════════════════════
-        var connectionString = configuration.GetConnectionString("DefaultConnection") 
-            ?? "Data Source=data/configuration.db";
-        
-        services.AddDbContext<ConfigurationDbContext>(options =>
-        {
-            options.UseSqlite(connectionString);
-            
-            // Enable detailed errors in Development
-            if (environment == "Development")
-            {
-                options.EnableSensitiveDataLogging();
-                options.EnableDetailedErrors();
-            }
-        });
+        services.AddMemoryCache(); // Required for ConfigurationRepository caching
         
         // ═══════════════════════════════════════════════════════
         // INTEGRATIONS (Phase 1)
@@ -75,6 +64,10 @@ var host = Host.CreateDefaultBuilder(args)
         // ═══════════════════════════════════════════════════════
         // CONFIGURATION SYSTEM (Phase 2)
         // ═══════════════════════════════════════════════════════
+        
+        // Database
+        services.AddDbContext<ConfigurationDbContext>(options =>
+            options.UseSqlite("Data Source=data/configuration.db"));
         
         // Data Layer
         services.AddScoped<ConfigurationQueryOptimizer>();
@@ -93,22 +86,61 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<ConfigurationOrchestrator>();
         
         // ═══════════════════════════════════════════════════════
-        // FUTURE SYSTEMS (Phase 3-5)
+        // TICKET SYSTEM (Phase 5)
         // ═══════════════════════════════════════════════════════
-        // Analytics System (Phase 3)
-        // services.AddDbContext<AnalyticsDbContext>(options => 
-        //     options.UseSqlite("Data Source=data/analytics.db"));
-        // services.AddScoped<AnalyticsQueryOptimizer>();
+        
+        // Database
+        services.AddDbContext<TicketDbContext>(options =>
+            options.UseSqlite("Data Source=data/tickets.db"));
+        
+        // Data Layer
+        services.AddScoped<TicketQueryOptimizer>();
+        services.AddScoped<IStatusTransition, TicketTransitionService>();
+        
+        // Repositories
+        services.AddScoped<ITicketRepository, TicketRepository>();
+        
+        // Services
+        services.AddScoped<TicketService>();
+        services.AddScoped<TicketFormService>();
+        services.AddScoped<TicketNotificationService>();
+        services.AddScoped<TicketExportService>();
+        
+        // Orchestrator
+        services.AddSingleton<TicketOrchestrator>();
+        
+        // ═══════════════════════════════════════════════════════
+        // STREAM TRACKING
+        // ═══════════════════════════════════════════════════════
+        
+        // Database
+        services.AddDbContext<StreamDbContext>(options =>
+            options.UseSqlite("Data Source=data/streams.db"));
+        
+        // Repository
+        services.AddScoped<IStreamRepository, StreamRepository>();
+        
+        // Services
+        services.AddScoped<AddStreamService>();
+        
+        // Commands
+        services.AddSingleton<StreamCommandHandler>();
+        
+        // Background watcher - polls Twitch, publishes events
+        services.AddHostedService<StreamMonitorService>();
+        
+        // ═══════════════════════════════════════════════════════
+        // NOTIFICATION SYSTEM
+        // ═══════════════════════════════════════════════════════
+        
+        services.AddScoped<StreamNotificationService>();
+        services.AddSingleton<NotificationOrchestrator>();
+        
+        // ═══════════════════════════════════════════════════════
+        // FUTURE SYSTEMS (Phase 3)
+        // ═══════════════════════════════════════════════════════
+        // Full Analytics System (Phase 3) - snapshots, viewer sampling, reports
         // services.AddSingleton<AnalyticsOrchestrator>();
-        
-        // Notification System (Phase 4)
-        // services.AddSingleton<NotificationOrchestrator>();
-        
-        // Ticket System (Phase 5)
-        // services.AddDbContext<TicketDbContext>(options => 
-        //     options.UseSqlite("Data Source=data/tickets.db"));
-        // services.AddScoped<TicketQueryOptimizer>();
-        // services.AddSingleton<TicketOrchestrator>();
         
         // ═══════════════════════════════════════════════════════
         // SYSTEM ORCHESTRATOR (Root)
@@ -140,12 +172,24 @@ try
     // ═══════════════════════════════════════════════════════
     using (var scope = host.Services.CreateScope())
     {
-        var configDbContext = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
+        Console.WriteLine("Initializing databases...");
         
-        // Ensure database is created
-        await configDbContext.Database.EnsureCreatedAsync();
+        // Initialize Configuration Database
+        var configDb = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
+        await configDb.Database.EnsureCreatedAsync();
+        Console.WriteLine("✅ Configuration database ready");
         
-        Console.WriteLine("✅ Configuration database initialized\n");
+        // Initialize Ticket Database
+        var ticketDb = scope.ServiceProvider.GetRequiredService<TicketDbContext>();
+        await ticketDb.Database.EnsureCreatedAsync();
+        Console.WriteLine("✅ Ticket database ready");
+        
+        // Initialize Stream database
+        var streamDb = scope.ServiceProvider.GetRequiredService<StreamDbContext>();
+        await streamDb.Database.EnsureCreatedAsync();
+        Console.WriteLine("✅ Stream database ready");
+        
+        Console.WriteLine();
     }
     
     // Get the system orchestrator

@@ -12,6 +12,7 @@ public enum ConfigKey
     AdminChannelId,                  // Discord.NotificationChannels.AdminChannelId
     AnalyticsReportChannelId,        // Discord.NotificationChannels.AnalyticsReportChannelId
     TicketLogChannelId,              // Discord.NotificationChannels.TicketLogChannelId
+    TicketEmbedChannelId,            // Discord.NotificationChannels.TicketEmbedChanelId
     
     #endregion
     
@@ -37,7 +38,11 @@ public enum ConfigKey
     HighStatsChannelId,              // TicketSettings.DiscordChannels.VoiceStatsChannels.HighStatsChannelId
     NormalStatsChannelId,            // TicketSettings.DiscordChannels.VoiceStatsChannels.NormalStatsChannelId
     EscalatedStatsChannelId,         // TicketSettings.DiscordChannels.VoiceStatsChannels.EscalatedStatsChannelId
-    OldestStatsChannelId             // TicketSettings.DiscordChannels.VoiceStatsChannels.OldestStatsChannelId
+    OldestStatsChannelId,             // TicketSettings.DiscordChannels.VoiceStatsChannels.OldestStatsChannelId
     
+    #endregion
+
+    #region Feature Flags (1)
+    TicketsEnabled // TicketSettings.TicketsEnabled
     #endregion
 }
