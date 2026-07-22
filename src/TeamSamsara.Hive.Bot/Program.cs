@@ -30,6 +30,19 @@ Console.WriteLine("==============================================");
 Console.WriteLine($"Team Samsara Hive v2 - Starting ({environment})");
 Console.WriteLine("==============================================\n");
 
+// Fixed, absolute path for all SQLite databases. Using an absolute path here
+// (instead of the old relative "data/xxx.db") means persistence no longer
+// depends on guessing the container's working directory - whatever platform
+// this runs on (Railway, Docker, etc.), just mount a persistent volume at
+// this exact path and the data survives redeploys/restarts.
+const string DataDirectory = "/data";
+
+// Ensure the directory exists. If a volume is mounted at DataDirectory,
+// this is a no-op (already exists). If no volume is mounted (e.g. local
+// dev), this creates a plain local folder so the app still runs - it just
+// won't persist across container rebuilds without a volume attached.
+Directory.CreateDirectory(DataDirectory);
+
 // Create host with dependency injection and logging
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
@@ -67,7 +80,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<ConfigurationDbContext>(options =>
-            options.UseSqlite("Data Source=data/configuration.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/configuration.db"));
         
         // Data Layer
         services.AddScoped<ConfigurationQueryOptimizer>();
@@ -91,7 +104,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<TicketDbContext>(options =>
-            options.UseSqlite("Data Source=data/tickets.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/tickets.db"));
         
         // Data Layer
         services.AddScoped<TicketQueryOptimizer>();
@@ -115,7 +128,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<StreamDbContext>(options =>
-            options.UseSqlite("Data Source=data/streams.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/streams.db"));
         
         // Repository
         services.AddScoped<IStreamRepository, StreamRepository>();
