@@ -92,6 +92,12 @@ public class AddStreamService : BaseService
         }
     }
 
+    // Returns every currently tracked stream, used by /stream list
+    public async Task<List<TrackedStreamEntity>> ListStreamsAsync()
+    {
+        return await _repository.GetAllAsync();
+    }
+
     // Sets or clears (roleId = null) the per-stream notification role override
     // for an already-tracked streamer, via /stream set-role
     public async Task<AddStreamResultDto> SetStreamRoleAsync(string usernameOrLink, ulong? roleId)

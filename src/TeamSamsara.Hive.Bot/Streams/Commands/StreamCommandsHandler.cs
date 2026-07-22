@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TeamSamsara.Hive.Bot.Integrations.Discord;
+using TeamSamsara.Hive.Bot.Notifications;
 using TeamSamsara.Hive.Bot.Streams.Services;
 
 namespace TeamSamsara.Hive.Bot.Streams.Commands;
@@ -72,11 +73,17 @@ public class StreamCommandHandler
             .AddOption(setRoleUsernameOption)
             .AddOption(setRoleRoleOption);
 
+        var listSubCommand = new SlashCommandOptionBuilder()
+            .WithName("list")
+            .WithDescription("List every streamer currently being tracked")
+            .WithType(ApplicationCommandOptionType.SubCommand);
+
         var streamCommand = new SlashCommandBuilder()
             .WithName("stream")
             .WithDescription("Manage tracked Twitch streams")
             .AddOption(addSubCommand)
-            .AddOption(setRoleSubCommand);
+            .AddOption(setRoleSubCommand)
+            .AddOption(listSubCommand);
 
         try
         {
@@ -130,6 +137,18 @@ public class StreamCommandHandler
             var result = await addStreamService.SetStreamRoleAsync(input, role.Id);
 
             await command.FollowupAsync(result.Message);
+        }
+        else if (subCommand.Name == "list")
+        {
+            await command.DeferAsync();
+
+            using var scope = _serviceProvider.CreateScope();
+            var addStreamService = scope.ServiceProvider.GetRequiredService<AddStreamService>();
+
+            var streams = await addStreamService.ListStreamsAsync();
+            var embed = NotificationTemplates.BuildStreamListEmbed(streams);
+
+            await command.FollowupAsync(embed: embed);
         }
     }
 }

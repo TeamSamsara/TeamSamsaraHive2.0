@@ -56,26 +56,4 @@ public class StreamNotificationService : BaseService
             LogError(ex, "Failed to send live notification for {Username}", evt.Username);
         }
     }
-
-    public async Task SendStreamOfflineNotificationAsync(StreamWentOfflineEvent evt)
-    {
-        try
-        {
-            var channelId = await _configService.GetChannelIdAsync(ConfigKey.StreamNotificationChannelId);
-            if (channelId == null)
-            {
-                LogWarning("StreamNotificationChannelId not configured - skipping offline notification for {Username}", evt.Username);
-                return;
-            }
-
-            var embed = NotificationTemplates.BuildStreamOfflineEmbed(evt);
-            await _discord.SendEmbedAsync(channelId.Value, embed);
-
-            LogInfo("Offline notification sent for {Username}", evt.Username);
-        }
-        catch (Exception ex)
-        {
-            LogError(ex, "Failed to send offline notification for {Username}", evt.Username);
-        }
-    }
 }
