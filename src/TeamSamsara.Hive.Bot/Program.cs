@@ -205,6 +205,14 @@ try
         Console.WriteLine();
     }
     
+    // Start the .NET Generic Host itself. This is what actually triggers
+    // every service registered via AddHostedService<T> (e.g. StreamMonitorService)
+    // to have its StartAsync/ExecuteAsync invoked. Without this call, hosted
+    // background services are registered in DI but NEVER RUN - they just sit
+    // there. SystemOrchestrator.StartAsync() below is a separate, custom
+    // method on a plain singleton and does not start hosted services.
+    await host.StartAsync();
+    
     // Get the system orchestrator
     var orchestrator = host.Services.GetRequiredService<SystemOrchestrator>();
     
@@ -216,15 +224,10 @@ try
     Console.WriteLine("Press Ctrl+C to stop...");
     Console.WriteLine("==============================================\n");
     
-    // Wait for shutdown signal
-    var cts = new CancellationTokenSource();
-    Console.CancelKeyPress += (sender, e) =>
-    {
-        e.Cancel = true;
-        cts.Cancel();
-    };
-    
-    await Task.Delay(-1, cts.Token);
+    // Block until a shutdown signal (Ctrl+C / SIGTERM) is received, then
+    // gracefully stops the host (and all hosted services, including
+    // StreamMonitorService) before returning.
+    await host.WaitForShutdownAsync();
 }
 catch (OperationCanceledException)
 {
