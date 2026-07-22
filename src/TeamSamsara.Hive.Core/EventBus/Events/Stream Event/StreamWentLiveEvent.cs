@@ -32,6 +32,10 @@ public class StreamWentLiveEvent : BaseEvent
     // When the stream started (UTC)
     public DateTime StartedAt { get; set; }
 
+    // Per-stream role override to ping instead of the global
+    // StreamNotificationRoleId config value. Null = use the global one.
+    public ulong? NotificationRoleId { get; set; }
+
     // Constructor - sets SourceSytem to "Analytics"
     public StreamWentLiveEvent() : base("Analytics")
     {
@@ -44,6 +48,3 @@ public class StreamWentLiveEvent : BaseEvent
     }
 
 }
-
-
-

@@ -18,6 +18,7 @@ public static class NotificationTemplates
     private const string LiveViewersFieldName = "Viewers";
     private const string LiveWatchFieldName = "Watch";
     private const string LiveWatchFieldFormat = "[Click here]({0})";
+    private const string LiveMessageFormat = "{0}Hey, **{1}** is live! Come check it out.";
 
     private const string OfflineTitleFormat = "⚫ {0} has gone offline";
     private const string OfflineDescriptionFormat = "Stream ended after {0} minutes";
@@ -25,6 +26,16 @@ public static class NotificationTemplates
     private const string OfflineAvgFieldName = "Avg Viewers";
 
     #endregion
+
+    // Build the plain-text message content sent alongside the live embed.
+    // If roleId is provided, the role is pinged at the front of the message.
+    // Pass null when StreamNotificationRoleId isn't configured - the message
+    // still gets sent, just without a ping.
+    public static string BuildStreamLiveMessage(StreamWentLiveEvent evt, ulong? roleId)
+    {
+        var rolePing = roleId.HasValue ? $"<@&{roleId.Value}> " : string.Empty;
+        return string.Format(LiveMessageFormat, rolePing, evt.DisplayName);
+    }
 
     // Build the embed sent when a tracked stream goes live
     public static Embed BuildStreamLiveEmbed(StreamWentLiveEvent evt)

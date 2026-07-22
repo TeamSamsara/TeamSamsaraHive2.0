@@ -87,8 +87,11 @@ public class DiscordIntegration : BaseIntegration
         return true;
     }
 
-    // Send an embed to a specific channel
-    public async Task SendEmbedAsync(ulong channelId, Embed embed)
+    // Send an embed to a specific channel, optionally with plain-text content
+    // above it (e.g. "<@&ROLEID> Hey, X is live!"). AllowedMentions.All is
+    // passed explicitly so role/user mentions in `content` actually notify -
+    // Discord.Net does not guarantee mentions ping by default.
+    public async Task SendEmbedAsync(ulong channelId, Embed embed, string? content = null)
     {
         Logger.LogDebug($"{DiscordConstants.LogPrefix} Sending embed to channel: {channelId}");
 
@@ -99,7 +102,7 @@ public class DiscordIntegration : BaseIntegration
             throw new InvalidOperationException($"Channel {channelId} is not a message channel");
         }
 
-        await messageChannel.SendMessageAsync(embed: embed);
+        await messageChannel.SendMessageAsync(text: content, embed: embed, allowedMentions: AllowedMentions.All);
     }
 
     // Send a direct message to a user

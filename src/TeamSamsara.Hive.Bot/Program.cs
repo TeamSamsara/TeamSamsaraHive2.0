@@ -201,23 +201,34 @@ try
         var streamDb = scope.ServiceProvider.GetRequiredService<StreamDbContext>();
         await streamDb.Database.EnsureCreatedAsync();
         Console.WriteLine("✅ Stream database ready");
+
+        // EnsureCreatedAsync only creates tables that don't exist yet - it does
+        // NOT alter existing tables. streams.db already had a TrackedStreams
+        // table from before NotificationRoleId was added to the entity, so we
+        // add the column by hand here if it's missing. Safe to run every
+        // startup: it's a no-op once the column exists.
+        await EnsureNotificationRoleColumnAsync(streamDb);
         
         Console.WriteLine();
     }
     
-    // Start the .NET Generic Host itself. This is what actually triggers
-    // every service registered via AddHostedService<T> (e.g. StreamMonitorService)
-    // to have its StartAsync/ExecuteAsync invoked. Without this call, hosted
-    // background services are registered in DI but NEVER RUN - they just sit
-    // there. SystemOrchestrator.StartAsync() below is a separate, custom
-    // method on a plain singleton and does not start hosted services.
-    await host.StartAsync();
-    
     // Get the system orchestrator
     var orchestrator = host.Services.GetRequiredService<SystemOrchestrator>();
     
-    // Initialize and start the system
+    // Initialize the system FIRST - this is what authenticates TwitchIntegration
+    // (Phase 1) and connects Discord, among other things. It must fully complete
+    // before we start any hosted background services below.
     await orchestrator.InitializeAsync();
+    
+    // NOW start the .NET Generic Host itself. This triggers every service
+    // registered via AddHostedService<T> (e.g. StreamMonitorService) to have
+    // its StartAsync/ExecuteAsync invoked. StreamMonitorService polls Twitch
+    // immediately on its first cycle with no startup delay, so this MUST come
+    // after orchestrator.InitializeAsync() - otherwise the poller's first
+    // Twitch API call races ahead of Twitch OAuth and fails with 401
+    // Unauthorized (TwitchIntegration's HttpClient has no auth header yet).
+    await host.StartAsync();
+    
     await orchestrator.StartAsync();
     
     Console.WriteLine("\n==============================================");
@@ -252,3 +263,42 @@ finally
 }
 
 return 0;
+
+// Checks whether TrackedStreams.NotificationRoleId exists via PRAGMA table_info,
+// and adds it with ALTER TABLE if it's missing. Lets the per-stream role-ping
+// feature work against a streams.db created before that column existed,
+// without wiping existing tracked streams.
+static async Task EnsureNotificationRoleColumnAsync(StreamDbContext streamDb)
+{
+    var connection = streamDb.Database.GetDbConnection();
+
+    if (connection.State != System.Data.ConnectionState.Open)
+    {
+        await connection.OpenAsync();
+    }
+
+    var hasColumn = false;
+
+    await using (var checkCmd = connection.CreateCommand())
+    {
+        checkCmd.CommandText = "PRAGMA table_info(TrackedStreams);";
+        await using var reader = await checkCmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            // Column index 1 in PRAGMA table_info's result set is the column name
+            if (string.Equals(reader.GetString(1), "NotificationRoleId", StringComparison.OrdinalIgnoreCase))
+            {
+                hasColumn = true;
+                break;
+            }
+        }
+    }
+
+    if (!hasColumn)
+    {
+        await using var alterCmd = connection.CreateCommand();
+        alterCmd.CommandText = "ALTER TABLE TrackedStreams ADD COLUMN NotificationRoleId INTEGER NULL;";
+        await alterCmd.ExecuteNonQueryAsync();
+        Console.WriteLine("✅ Migrated streams.db: added NotificationRoleId column");
+    }
+}

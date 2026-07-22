@@ -39,8 +39,15 @@ public class StreamNotificationService : BaseService
                 return;
             }
 
+            // Per-stream role (set via /stream add or /stream set-role) wins
+            // if present; otherwise fall back to the global StreamNotificationRoleId
+            // config value. Either can be unset, in which case there's just no ping.
+            var roleId = evt.NotificationRoleId
+                ?? await _configService.GetRoleIdAsync(ConfigKey.StreamNotificationRoleId);
+
             var embed = NotificationTemplates.BuildStreamLiveEmbed(evt);
-            await _discord.SendEmbedAsync(channelId.Value, embed);
+            var content = NotificationTemplates.BuildStreamLiveMessage(evt, roleId);
+            await _discord.SendEmbedAsync(channelId.Value, embed, content);
 
             LogInfo("Live notification sent for {Username}", evt.Username);
         }
