@@ -23,7 +23,7 @@ public static class NotificationTemplates
     // The actual Discord message content (not the embed) sent when a stream
     // goes live. {0} = role ping (or empty if none configured/overridden),
     // {1} = display name, {2} = stream URL.
-    private const string LiveMessageFormat = "{0}**{1}** vient de passer en live ! [Regarder sur Twitch]({2})";
+    private const string LiveMessageFormat = "{0}**{1}** just went live! [Watch on Twitch]({2})";
 
     private const string ListTitle = "Tracked Streams";
     private const string ListEmptyDescription = "No streams are currently being tracked. Use `/stream add` to start tracking one.";
