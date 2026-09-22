@@ -1,5 +1,6 @@
 using Discord;
 using TeamSamsara.Hive.Bot.Integrations.Discord.Constants;
+using TeamSamsara.Hive.Bot.Streams.Models.Entities;
 using TeamSamsara.Hive.Core.EventBus.Events;
 
 namespace TeamSamsara.Hive.Bot.Notifications;
@@ -19,12 +20,54 @@ public static class NotificationTemplates
     private const string LiveWatchFieldName = "Watch";
     private const string LiveWatchFieldFormat = "[Click here]({0})";
 
-    private const string OfflineTitleFormat = "⚫ {0} has gone offline";
-    private const string OfflineDescriptionFormat = "Stream ended after {0} minutes";
-    private const string OfflinePeakFieldName = "Peak Viewers";
-    private const string OfflineAvgFieldName = "Avg Viewers";
+    // The actual Discord message content (not the embed) sent when a stream
+    // goes live. {0} = role ping (or empty if none configured/overridden),
+    // {1} = display name, {2} = stream URL.
+    private const string LiveMessageFormat = "{0}**{1}** just went live! [Watch on Twitch]({2})";
+
+    private const string ListTitle = "Tracked Streams";
+    private const string ListEmptyDescription = "No streams are currently being tracked. Use `/stream add` to start tracking one.";
+    private const string ListLineFormat = "{0} **{1}** (`{2}`) — {3}";
+    private const string ListDefaultRoleLabel = "_default role_";
 
     #endregion
+
+    // Build the plain-text message content sent alongside the live embed.
+    // If roleId is provided, the role is pinged at the front of the message.
+    // Pass null when no role (per-stream or global) is configured - the
+    // message still gets sent, just without a ping.
+    public static string BuildStreamLiveMessage(StreamWentLiveEvent evt, ulong? roleId)
+    {
+        var rolePing = roleId.HasValue ? $"<@&{roleId.Value}> " : string.Empty;
+        return string.Format(LiveMessageFormat, rolePing, evt.DisplayName, evt.StreamUrl);
+    }
+
+    // Build the embed listing every currently tracked streamer, their live
+    // status, and which role (if any) is overridden for them specifically.
+    public static Embed BuildStreamListEmbed(IReadOnlyList<TrackedStreamEntity> streams)
+    {
+        var builder = new EmbedBuilder()
+            .WithTitle(ListTitle)
+            .WithColor(DiscordConstants.SuccessEmbedColor)
+            .WithCurrentTimestamp();
+
+        if (streams.Count == 0)
+        {
+            builder.WithDescription(ListEmptyDescription);
+            return builder.Build();
+        }
+
+        var lines = streams.Select(s =>
+        {
+            var statusIcon = s.IsLive ? "🔴" : "⚫";
+            var roleLabel = s.NotificationRoleId.HasValue ? $"<@&{s.NotificationRoleId.Value}>" : ListDefaultRoleLabel;
+            return string.Format(ListLineFormat, statusIcon, s.DisplayName, s.TwitchUsername, roleLabel);
+        });
+
+        builder.WithDescription(string.Join("\n", lines));
+
+        return builder.Build();
+    }
 
     // Build the embed sent when a tracked stream goes live
     public static Embed BuildStreamLiveEmbed(StreamWentLiveEvent evt)
@@ -43,28 +86,6 @@ public static class NotificationTemplates
         if (!string.IsNullOrEmpty(thumbnail))
         {
             builder.WithThumbnailUrl(thumbnail);
-        }
-
-        return builder.Build();
-    }
-
-    // Build the embed sent when a tracked stream goes offline
-    public static Embed BuildStreamOfflineEmbed(StreamWentOfflineEvent evt)
-    {
-        var builder = new EmbedBuilder()
-            .WithTitle(string.Format(OfflineTitleFormat, evt.DisplayName))
-            .WithDescription(string.Format(OfflineDescriptionFormat, evt.DurationMinutes))
-            .WithColor(DiscordConstants.ErrorEmbedColor)
-            .WithTimestamp(evt.EndedAt);
-
-        if (evt.PeakViewers.HasValue)
-        {
-            builder.AddField(OfflinePeakFieldName, evt.PeakViewers.Value.ToString(), inline: true);
-        }
-
-        if (evt.AverageViewers.HasValue)
-        {
-            builder.AddField(OfflineAvgFieldName, evt.AverageViewers.Value.ToString(), inline: true);
         }
 
         return builder.Build();

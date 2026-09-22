@@ -30,6 +30,19 @@ Console.WriteLine("==============================================");
 Console.WriteLine($"Team Samsara Hive v2 - Starting ({environment})");
 Console.WriteLine("==============================================\n");
 
+// Fixed, absolute path for all SQLite databases. Using an absolute path here
+// (instead of the old relative "data/xxx.db") means persistence no longer
+// depends on guessing the container's working directory - whatever platform
+// this runs on (Railway, Docker, etc.), just mount a persistent volume at
+// this exact path and the data survives redeploys/restarts.
+const string DataDirectory = "/data";
+
+// Ensure the directory exists. If a volume is mounted at DataDirectory,
+// this is a no-op (already exists). If no volume is mounted (e.g. local
+// dev), this creates a plain local folder so the app still runs - it just
+// won't persist across container rebuilds without a volume attached.
+Directory.CreateDirectory(DataDirectory);
+
 // Create host with dependency injection and logging
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
@@ -67,7 +80,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<ConfigurationDbContext>(options =>
-            options.UseSqlite("Data Source=data/configuration.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/configuration.db"));
         
         // Data Layer
         services.AddScoped<ConfigurationQueryOptimizer>();
@@ -91,7 +104,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<TicketDbContext>(options =>
-            options.UseSqlite("Data Source=data/tickets.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/tickets.db"));
         
         // Data Layer
         services.AddScoped<TicketQueryOptimizer>();
@@ -115,7 +128,7 @@ var host = Host.CreateDefaultBuilder(args)
         
         // Database
         services.AddDbContext<StreamDbContext>(options =>
-            options.UseSqlite("Data Source=data/streams.db"));
+            options.UseSqlite($"Data Source={DataDirectory}/streams.db"));
         
         // Repository
         services.AddScoped<IStreamRepository, StreamRepository>();
@@ -188,6 +201,13 @@ try
         var streamDb = scope.ServiceProvider.GetRequiredService<StreamDbContext>();
         await streamDb.Database.EnsureCreatedAsync();
         Console.WriteLine("✅ Stream database ready");
+
+        // EnsureCreatedAsync only creates tables that don't exist yet - it does
+        // NOT alter existing tables. streams.db already had a TrackedStreams
+        // table from before NotificationRoleId was added to the entity, so we
+        // add the column by hand here if it's missing. Safe to run every
+        // startup: it's a no-op once the column exists.
+        await EnsureNotificationRoleColumnAsync(streamDb);
         
         Console.WriteLine();
     }
@@ -195,23 +215,30 @@ try
     // Get the system orchestrator
     var orchestrator = host.Services.GetRequiredService<SystemOrchestrator>();
     
-    // Initialize and start the system
+    // Initialize the system FIRST - this is what authenticates TwitchIntegration
+    // (Phase 1) and connects Discord, among other things. It must fully complete
+    // before we start any hosted background services below.
     await orchestrator.InitializeAsync();
+    
+    // NOW start the .NET Generic Host itself. This triggers every service
+    // registered via AddHostedService<T> (e.g. StreamMonitorService) to have
+    // its StartAsync/ExecuteAsync invoked. StreamMonitorService polls Twitch
+    // immediately on its first cycle with no startup delay, so this MUST come
+    // after orchestrator.InitializeAsync() - otherwise the poller's first
+    // Twitch API call races ahead of Twitch OAuth and fails with 401
+    // Unauthorized (TwitchIntegration's HttpClient has no auth header yet).
+    await host.StartAsync();
+    
     await orchestrator.StartAsync();
     
     Console.WriteLine("\n==============================================");
     Console.WriteLine("Press Ctrl+C to stop...");
     Console.WriteLine("==============================================\n");
     
-    // Wait for shutdown signal
-    var cts = new CancellationTokenSource();
-    Console.CancelKeyPress += (sender, e) =>
-    {
-        e.Cancel = true;
-        cts.Cancel();
-    };
-    
-    await Task.Delay(-1, cts.Token);
+    // Block until a shutdown signal (Ctrl+C / SIGTERM) is received, then
+    // gracefully stops the host (and all hosted services, including
+    // StreamMonitorService) before returning.
+    await host.WaitForShutdownAsync();
 }
 catch (OperationCanceledException)
 {
@@ -236,3 +263,42 @@ finally
 }
 
 return 0;
+
+// Checks whether TrackedStreams.NotificationRoleId exists via PRAGMA table_info,
+// and adds it with ALTER TABLE if it's missing. Lets the per-stream role-ping
+// feature work against a streams.db created before that column existed,
+// without wiping existing tracked streams.
+static async Task EnsureNotificationRoleColumnAsync(StreamDbContext streamDb)
+{
+    var connection = streamDb.Database.GetDbConnection();
+
+    if (connection.State != System.Data.ConnectionState.Open)
+    {
+        await connection.OpenAsync();
+    }
+
+    var hasColumn = false;
+
+    await using (var checkCmd = connection.CreateCommand())
+    {
+        checkCmd.CommandText = "PRAGMA table_info(TrackedStreams);";
+        await using var reader = await checkCmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            // Column index 1 in PRAGMA table_info's result set is the column name
+            if (string.Equals(reader.GetString(1), "NotificationRoleId", StringComparison.OrdinalIgnoreCase))
+            {
+                hasColumn = true;
+                break;
+            }
+        }
+    }
+
+    if (!hasColumn)
+    {
+        await using var alterCmd = connection.CreateCommand();
+        alterCmd.CommandText = "ALTER TABLE TrackedStreams ADD COLUMN NotificationRoleId INTEGER NULL;";
+        await alterCmd.ExecuteNonQueryAsync();
+        Console.WriteLine("✅ Migrated streams.db: added NotificationRoleId column");
+    }
+}

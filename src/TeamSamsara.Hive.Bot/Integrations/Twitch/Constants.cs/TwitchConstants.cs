@@ -23,7 +23,14 @@ public static class TwitchConstants
     public const string ValidateEndpoint = "/validate";
     
     // Query Parameters
-    public const string UserLoginParam = "user_login";
+    // NOTE: Twitch Helix uses different param names for looking up a user
+    // depending on the endpoint:
+    //   - GET /helix/streams  -> "user_login"
+    //   - GET /helix/users    -> "login"
+    // Using the wrong one on /users returns 400 Bad Request
+    // ("Must provide an ID, Login or OAuth Token").
+    public const string UserLoginParam = "user_login"; // used with StreamsEndpoint
+    public const string LoginParam = "login";           // used with UsersEndpoint
     public const string UserIdParam = "user_id";
     public const string BroadcasterIdParam = "broadcaster_id";
     public const string FirstParam = "first";

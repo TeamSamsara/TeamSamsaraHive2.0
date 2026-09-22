@@ -30,7 +30,6 @@ public class NotificationOrchestrator : BaseOrchestrator
         await base.InitializeAsync(cancellationToken);
 
         _eventBus.Subscribe<StreamWentLiveEvent>(OnStreamWentLive);
-        _eventBus.Subscribe<StreamWentOfflineEvent>(OnStreamWentOffline);
 
         LogInfo("Notification system subscribed to stream events");
     }
@@ -40,12 +39,5 @@ public class NotificationOrchestrator : BaseOrchestrator
         using var scope = ServiceProvider.CreateScope();
         var notificationService = scope.ServiceProvider.GetRequiredService<StreamNotificationService>();
         await notificationService.SendStreamLiveNotificationAsync(evt);
-    }
-
-    private async Task OnStreamWentOffline(StreamWentOfflineEvent evt)
-    {
-        using var scope = ServiceProvider.CreateScope();
-        var notificationService = scope.ServiceProvider.GetRequiredService<StreamNotificationService>();
-        await notificationService.SendStreamOfflineNotificationAsync(evt);
     }
 }

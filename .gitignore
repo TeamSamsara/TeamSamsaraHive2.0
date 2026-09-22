@@ -15,7 +15,6 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
-
 # ====================
 # User-Specific Files
 # ====================
@@ -25,7 +24,6 @@ bld/
 *.userosscache
 *.sln.docstates
 *.env
-
 # ====================
 # Database Files
 # ====================
@@ -34,7 +32,6 @@ bld/
 *.db-wal
 *.sqlite
 *.sqlite3
-
 # ====================
 # Sensitive Configuration Files
 # ====================
@@ -45,11 +42,9 @@ appsettings.Staging.json
 appsettings.Production.json
 appsettings.*.json
 !appsettings.json
-
 # Secrets
 secrets.json
 *.secrets.json
-
 # ====================
 # Visual Studio
 # ====================
@@ -62,20 +57,17 @@ secrets.json
 *.pidb
 *.svclog
 *.scc
-
 # Visual Studio profiler
 *.psess
 *.vsp
 *.vspx
 *.sap
-
 # ====================
 # JetBrains Rider
 # ====================
 .idea/
 *.sln.iml
 *.DotSettings.user
-
 # ====================
 # Visual Studio Code
 # ====================
@@ -84,7 +76,6 @@ secrets.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-
 # ====================
 # Docker
 # ====================
@@ -92,14 +83,12 @@ secrets.json
 # But ignore runtime data
 docker-compose.override.yml
 .dockerignore.bak
-
 # ====================
 # macOS
 # ====================
 .DS_Store
 .AppleDouble
 .LSOverride
-
 # ====================
 # Windows
 # ====================
@@ -109,7 +98,6 @@ ehthumbs.db
 ehthumbs_vista.db
 Desktop.ini
 $RECYCLE.BIN/
-
 # ====================
 # Linux
 # ====================
@@ -117,14 +105,12 @@ $RECYCLE.BIN/
 .fuse_hidden*
 .directory
 .Trash-*
-
 # ====================
 # Node (if you ever add frontend)
 # ====================
 node_modules/
 npm-debug.log
 yarn-error.log
-
 # ====================
 # NuGet Packages
 # ====================
@@ -134,7 +120,6 @@ yarn-error.log
 !**/packages/build/
 *.nuget.props
 *.nuget.targets
-
 # ====================
 # Test Results
 # ====================
@@ -143,7 +128,6 @@ yarn-error.log
 *.trx
 *.coverage
 *.coveragexml
-
 # ====================
 # Backup & Temp Files
 # ====================
@@ -154,15 +138,16 @@ yarn-error.log
 *.swp
 *.swo
 *~
-
 # ====================
 # Project-Specific
 # ====================
 # Logs directory (if you create one)
 logs/
-
-# Data directory (for production database in Docker)
-data/
-
+# NOTE: removed blanket "data/" rule - it was matching source folders
+# named Data/ (Configuration/Data, Ticket/Data, Streams/Data) on Windows
+# due to case-insensitive git matching, silently excluding real source
+# code from every commit. The runtime SQLite files are already covered
+# by the *.db / *.db-shm / *.db-wal rules above, so this line was both
+# redundant and actively harmful.
 # Migration backups
 Migrations/backup/

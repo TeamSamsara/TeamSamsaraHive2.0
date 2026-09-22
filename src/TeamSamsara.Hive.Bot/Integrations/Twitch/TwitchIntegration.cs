@@ -79,6 +79,7 @@ public class TwitchIntegration : BaseIntegration
     {
         Logger.LogDebug("[TwitchIntegration] Getting stream status for: {Username}", username);
 
+        // /helix/streams identifies users via "user_login"
         var url = BuildApiUrl(TwitchConstants.StreamsEndpoint, (TwitchConstants.UserLoginParam, username));
         var response = await GetApiResponseAsync<TwitchStreamResponseDto>(url);
 
@@ -96,7 +97,9 @@ public class TwitchIntegration : BaseIntegration
     {
         Logger.LogDebug("[TwitchIntegration] Getting user info for: {Username}", username);
 
-        var url = BuildApiUrl(TwitchConstants.UsersEndpoint, (TwitchConstants.UserLoginParam, username));
+        // /helix/users identifies users via "login" (NOT "user_login" - that param
+        // is only valid on /helix/streams and causes a 400 Bad Request here)
+        var url = BuildApiUrl(TwitchConstants.UsersEndpoint, (TwitchConstants.LoginParam, username));
         var response = await GetApiResponseAsync<TwitchUserResponseDto>(url);
 
         if (response?.data == null || response.data.Count == 0)
@@ -207,7 +210,8 @@ public class TwitchIntegration : BaseIntegration
 
         if (queryParams.Length > 0)
         {
-            var queryString = string.Join("&", queryParams.Select(p => $"{p.key}={p.value}"));
+            var queryString = string.Join("&", queryParams.Select(p =>
+                $"{Uri.EscapeDataString(p.key)}={Uri.EscapeDataString(p.value)}"));
             url = $"{url}?{queryString}";
         }
 

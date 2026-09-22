@@ -18,4 +18,9 @@ public class TrackedStreamEntity : BaseEntity
     public DateTime? LastOfflineAtUtc { get; set; }
     public string? LastStreamTitle { get; set; }
     public string? LastGameName { get; set; }
+
+    // Optional override for which role gets pinged when THIS stream goes live.
+    // Null means "use the global StreamNotificationRoleId config value instead".
+    // Set via /stream add (role option) or /stream set-role.
+    public ulong? NotificationRoleId { get; set; }
 }

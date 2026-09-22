@@ -22,6 +22,12 @@ public class StreamMonitorService : BackgroundService
     private readonly ILogger<StreamMonitorService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(60);
 
+    // Gap enforced between consecutive "went live"/"went offline" notifications
+    // within the SAME poll cycle. Without this, if several tracked streams all
+    // transition state in the same 60s tick (e.g. right after a restart), every
+    // notification fires back-to-back with zero gap between messages.
+    private readonly TimeSpan _notificationStaggerDelay = TimeSpan.FromSeconds(5);
+
     // In-memory record of when each live stream started, used to compute
     // duration when it goes offline. Fine to lose on restart - non-critical.
     private readonly Dictionary<string, DateTime> _liveSince = new();
@@ -44,7 +50,7 @@ public class StreamMonitorService : BackgroundService
         {
             try
             {
-                await PollAllStreamsAsync();
+                await PollAllStreamsAsync(stoppingToken);
             }
             catch (Exception ex)
             {
@@ -55,7 +61,7 @@ public class StreamMonitorService : BackgroundService
         }
     }
 
-    private async Task PollAllStreamsAsync()
+    private async Task PollAllStreamsAsync(CancellationToken stoppingToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IStreamRepository>();
@@ -87,10 +93,13 @@ public class StreamMonitorService : BackgroundService
                     ViewerCount = status.viewer_count,
                     StreamUrl = $"https://twitch.tv/{stream.TwitchUsername}",
                     ThumbnailUrl = status.thumbnail_url,
-                    StartedAt = status.started_at
+                    StartedAt = status.started_at,
+                    NotificationRoleId = stream.NotificationRoleId
                 });
 
                 _logger.LogInformation("[StreamMonitor] {Username} went live", stream.TwitchUsername);
+
+                await Task.Delay(_notificationStaggerDelay, stoppingToken);
             }
             else if (!isLiveNow && stream.IsLive)
             {
@@ -111,6 +120,8 @@ public class StreamMonitorService : BackgroundService
                 });
 
                 _logger.LogInformation("[StreamMonitor] {Username} went offline", stream.TwitchUsername);
+
+                await Task.Delay(_notificationStaggerDelay, stoppingToken);
             }
         }
     }
