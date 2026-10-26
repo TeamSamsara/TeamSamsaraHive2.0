@@ -28,7 +28,7 @@ public class StreamCommandHandler
     // Call once after Discord is connected (see wiring notes)
     public void RegisterEventHandlers()
     {
-        _discord.Client.SlashCommandExecuted += OnSlashCommandExecutedAsync;
+        _discord.Interactions.OnSlashCommand("stream", OnSlashCommandExecutedAsync);
     }
 
     // Registers /stream with Discord - safe to call on every startup,

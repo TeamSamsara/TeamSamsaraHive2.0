@@ -36,9 +36,9 @@ public class TicketOrchestrator : BaseOrchestrator
         await RegisterSlashCommandsAsync();
         
         // Hook up event handlers
-        _discord.Client.SlashCommandExecuted += OnSlashCommandExecuted;
-        _discord.Client.ModalSubmitted += OnModalSubmitted;
-        _discord.Client.ButtonExecuted += OnButtonExecuted;
+        _discord.Interactions.OnSlashCommand("ticket", OnSlashCommandExecuted);
+        _discord.Interactions.OnModal("ticket_create_", OnModalSubmitted);
+        _discord.Interactions.OnComponent("ticket_", OnButtonExecuted);
         
         // Post/update ticket embed with buttons
         await PostTicketEmbedAsync();

@@ -53,7 +53,10 @@ public class StreamNotificationService : BaseService
         }
         catch (Exception ex)
         {
+            // Rethrow so the event bus reports the failure and the stream
+            // monitor retries the alert on its next poll
             LogError(ex, "Failed to send live notification for {Username}", evt.Username);
+            throw;
         }
     }
 }

@@ -47,15 +47,19 @@ public class EventBus
     // Publish an event to all subscribers
     // Called by orchestrators when something happens
     // Example: await _eventBus.PublishAsync(new StreamWentLiveEvent { ... });
-    public async Task PublishAsync<TEvent>(TEvent eventData) where TEvent : class
+    // Returns true when every subscriber handled it without throwing (also
+    // true when nobody is subscribed), so a publisher can retry a failed
+    // delivery. Callers that don't care can ignore the result.
+    public async Task<bool> PublishAsync<TEvent>(TEvent eventData) where TEvent : class
     {
+        var allSucceeded = true;
         var eventType = typeof(TEvent);
         
         // Check if anyone is listening
         if (!_subscribers.TryGetValue(eventType, out var handlers))
         {
             _logger.LogDebug("No subscribers for {EventType}", eventType.Name);
-            return;
+            return true;
         }
         
         _logger.LogInformation("Publishing {EventType} to {Count} subscriber(s)", 
@@ -78,10 +82,13 @@ public class EventBus
             {
                 // Log error but continue calling other handlers
                 // One broken subscriber shouldn't stop the others
+                allSucceeded = false;
                 _logger.LogError(ex, 
                     "Error in event handler for {EventType}", 
                     eventType.Name);
             }
         }
+
+        return allSucceeded;
     }
 }

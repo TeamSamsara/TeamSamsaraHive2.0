@@ -17,6 +17,15 @@ public class TwitchIntegration : BaseIntegration
     private string _clientId = string.Empty;
     private string _clientSecret = string.Empty;
 
+    // App access tokens expire (Twitch says how long in expires_in). The token
+    // used to be fetched once at startup and never renewed, so after it
+    // expired every request failed with 401 and stream alerts silently
+    // stopped. Now it is renewed shortly before expiry, and again if Twitch
+    // ever answers 401.
+    private DateTime _tokenExpiresAtUtc = DateTime.MinValue;
+    private readonly SemaphoreSlim _authLock = new(1, 1);
+    private static readonly TimeSpan RenewBeforeExpiry = TimeSpan.FromHours(1);
+
     public override string IntegrationName => "Twitch";
 
     #region Constructor
@@ -40,16 +49,8 @@ public class TwitchIntegration : BaseIntegration
         _clientSecret = _configuration[TwitchConstants.ClientSecretConfigKey]
             ?? throw new InvalidOperationException("Twitch Client Secret not configured");
 
-        // Get OAuth access token
+        // Get OAuth access token (headers are added per request, see SendGetAsync)
         await AuthenticateAsync(cancellationToken);
-
-        // Configure HttpClient headers
-        HttpClient.DefaultRequestHeaders.Clear();
-        HttpClient.DefaultRequestHeaders.Add(TwitchConstants.ClientIdHeader, _clientId);
-        HttpClient.DefaultRequestHeaders.Add(
-            TwitchConstants.AuthorizationHeader,
-            $"{TwitchConstants.AuthorizationPrefix} {_accessToken}"
-        );
 
         IsInitialized = true;
         Logger.LogInformation("[TwitchIntegration] Initialized successfully");
@@ -64,7 +65,7 @@ public class TwitchIntegration : BaseIntegration
         try
         {
             var url = $"{TwitchConstants.ApiBaseUrl}{TwitchConstants.UsersEndpoint}";
-            var response = await HttpClient.GetAsync(url);
+            using var response = await SendGetAsync(url);
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -188,7 +189,8 @@ public class TwitchIntegration : BaseIntegration
         }
 
         _accessToken = tokenResponse.access_token;
-        Logger.LogInformation("[TwitchIntegration] Authentication successful");
+        _tokenExpiresAtUtc = DateTime.UtcNow.AddSeconds(Math.Max(tokenResponse.expires_in, 0));
+        Logger.LogInformation("[TwitchIntegration] Authentication successful (token valid until {ExpiresAt:u})", _tokenExpiresAtUtc);
     }
 
     // Get user ID by username
@@ -221,9 +223,58 @@ public class TwitchIntegration : BaseIntegration
     // Make GET request and deserialize response
     private async Task<T?> GetApiResponseAsync<T>(string url) where T : class
     {
-        var response = await HttpClient.GetAsync(url);
+        using var response = await SendGetAsync(url);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<T>();
+    }
+
+    // Sends an authenticated GET. Renews the token first when it is close to
+    // expiring, and once more (then retries) if Twitch still answers 401.
+    private async Task<HttpResponseMessage> SendGetAsync(string url)
+    {
+        if (DateTime.UtcNow >= _tokenExpiresAtUtc - RenewBeforeExpiry)
+        {
+            await RenewTokenAsync(_accessToken, "token is about to expire");
+        }
+
+        var tokenUsed = _accessToken;
+        var response = await HttpClient.SendAsync(BuildGetRequest(url, tokenUsed));
+        if (response.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+        {
+            return response;
+        }
+
+        response.Dispose();
+        await RenewTokenAsync(tokenUsed, "Twitch answered 401 Unauthorized");
+        return await HttpClient.SendAsync(BuildGetRequest(url, _accessToken));
+    }
+
+    private HttpRequestMessage BuildGetRequest(string url, string token)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Add(TwitchConstants.ClientIdHeader, _clientId);
+        request.Headers.Add(TwitchConstants.AuthorizationHeader, $"{TwitchConstants.AuthorizationPrefix} {token}");
+        return request;
+    }
+
+    // Only one renewal at a time; callers that waited for it reuse the new token
+    private async Task RenewTokenAsync(string staleToken, string reason)
+    {
+        await _authLock.WaitAsync();
+        try
+        {
+            if (_accessToken != staleToken && DateTime.UtcNow < _tokenExpiresAtUtc - RenewBeforeExpiry)
+            {
+                return; // someone else already renewed it
+            }
+
+            Logger.LogInformation("[TwitchIntegration] Renewing access token: {Reason}", reason);
+            await AuthenticateAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _authLock.Release();
+        }
     }
 
     #endregion

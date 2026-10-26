@@ -23,15 +23,32 @@ using TeamSamsara.Hive.Bot.Streams.Data;
 using TeamSamsara.Hive.Bot.Streams.Repositories;
 using TeamSamsara.Hive.Bot.Streams.Services;
 using TeamSamsara.Hive.Bot.Notifications;
+using TeamSamsara.Hive.Bot.Protocols;
+using TeamSamsara.Hive.Bot.Protocols.Repositories;
 using TeamSamsara.Hive.Core.EventBus;
 using TeamSamsara.Hive.Core.Workflows.Abstractions;
 
-// Load local settings from a .env file, if there is one (searched for in the
-// current folder and its parents, so `dotnet run` from the project folder
-// finds the .env at the repo root). .env is git-ignored and is never deployed,
-// so on Render this does nothing. NoClobber: real environment variables
-// always win over .env values.
+// Local settings come from git-ignored .env files at the repo root (searched
+// for in the current folder and its parents). They are never deployed, so on
+// Render none of this loads anything. Two profiles keep the bots apart:
+//   dev.env   HiveDev token + dev database (the default)
+//   prod.env  production token + database, only with: dotnet run -- --profile prod
+//   .env      settings both share (Twitch keys, ...)
+// NoClobber: real environment variables win, then the profile file, then .env.
+var profileArg = Array.IndexOf(args, "--profile");
+var localProfile = profileArg >= 0 && profileArg + 1 < args.Length
+    ? args[profileArg + 1]
+    : Environment.GetEnvironmentVariable("HIVE_PROFILE") ?? "dev";
+var profileValues = DotNetEnv.Env.NoClobber().TraversePath().Load($"{localProfile}.env").ToList();
 DotNetEnv.Env.NoClobber().TraversePath().Load();
+if (profileValues.Count > 0)
+{
+    Console.WriteLine($"Local profile: {localProfile} ({localProfile}.env)");
+    if (localProfile == "prod")
+    {
+        Console.WriteLine("⚠️  PRODUCTION profile: stop the Render service first, or the production bot runs twice.");
+    }
+}
 
 // Determine environment
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -193,6 +210,17 @@ var host = Host.CreateDefaultBuilder(args)
         
         services.AddScoped<StreamNotificationService>();
         services.AddSingleton<NotificationOrchestrator>();
+        
+        // ═══════════════════════════════════════════════════════
+        // PROTOCOLS (social checklists, planning, reminders)
+        // ═══════════════════════════════════════════════════════
+        // Firestore only: with Database:Provider=Sqlite the /protocol
+        // command is simply not registered.
+        if (useFirestore)
+        {
+            services.AddSingleton<IProtocolSettingsRepository, FirestoreProtocolSettingsRepository>();
+            services.AddSingleton<ProtocolOrchestrator>();
+        }
         
         // ═══════════════════════════════════════════════════════
         // FUTURE SYSTEMS (Phase 3)

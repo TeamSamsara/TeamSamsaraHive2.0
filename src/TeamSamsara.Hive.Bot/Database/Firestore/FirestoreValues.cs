@@ -11,6 +11,7 @@ public static class FirestoreCollections
     public const string Tickets = "tickets";
     public const string StatusTransitions = "statusTransitions";
     public const string Counters = "counters";
+    public const string ProtocolSettings = "protocolSettings";
 }
 
 // Conversions between entity property types and Firestore field values.

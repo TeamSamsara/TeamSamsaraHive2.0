@@ -25,6 +25,10 @@ public class DiscordIntegration : BaseIntegration
     private long _disconnectedSinceTicks;
     private readonly CancellationTokenSource _watchdogCts = new();
     public DiscordSocketClient Client => _client;
+
+    // Every system registers its slash commands, buttons, menus and modals
+    // here instead of subscribing to the client's events directly.
+    public InteractionRouter Interactions { get; }
     public override string IntegrationName => "Discord";
 
     #region Constructor
@@ -38,6 +42,7 @@ public class DiscordIntegration : BaseIntegration
     {
         _configuration = configuration;
         _lifetime = lifetime;
+        Interactions = new InteractionRouter(logger);
 
         // Stop watching once the app is shutting down on purpose
         _lifetime.ApplicationStopping.Register(() => _watchdogCts.Cancel());
@@ -310,6 +315,10 @@ public class DiscordIntegration : BaseIntegration
         _client.Ready += OnReady;
         _client.Connected += OnConnected;
         _client.Disconnected += OnDisconnected;
+
+        // Interactions (slash commands, buttons, menus, modals, autocomplete)
+        // are dispatched off the gateway task by the router
+        Interactions.Attach(_client);
 
         // Message events (stubbed for Phase 2)
         _client.MessageReceived += OnMessageReceived;

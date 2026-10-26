@@ -7,6 +7,7 @@ using TeamSamsara.Hive.Bot.Integrations.Twitch;
 using TeamSamsara.Hive.Bot.Tickets;
 using TeamSamsara.Hive.Bot.Streams.Commands;
 using TeamSamsara.Hive.Bot.Notifications;
+using TeamSamsara.Hive.Bot.Protocols;
 
 using TeamSamsara.Hive.Core.Abstractions;
 
@@ -82,6 +83,19 @@ public class SystemOrchestrator : BaseOrchestrator
             await streamCommands.RegisterCommandsAsync();
             LogInfo("✅ Stream Commands registered");
             
+            // Phase 6: Protocols (only registered when using Firestore)
+            var protocols = ServiceProvider.GetService<ProtocolOrchestrator>();
+            if (protocols != null)
+            {
+                LogInfo("Phase 6: Initializing Protocols...");
+                await protocols.InitializeAsync(cancellationToken);
+                LogInfo("✅ Protocols initialized");
+            }
+            else
+            {
+                LogInfo("Protocols skipped (needs Database:Provider=Firestore)");
+            }
+            
             // Future: Full Analytics System
             // LogInfo("Phase X: Initializing Analytics System...");
             // await _analyticsOrchestrator.InitializeAsync(cancellationToken);
@@ -123,6 +137,13 @@ public class SystemOrchestrator : BaseOrchestrator
             await notificationOrchestrator.StartAsync(cancellationToken);
             LogInfo("✅ Notification System started");
             
+            var protocols = ServiceProvider.GetService<ProtocolOrchestrator>();
+            if (protocols != null)
+            {
+                await protocols.StartAsync(cancellationToken);
+                LogInfo("✅ Protocols started");
+            }
+            
             // Note: StreamMonitorService is registered as a HostedService in Program.cs,
             // so the .NET host starts/stops it automatically - no manual call needed here.
             
@@ -150,6 +171,13 @@ public class SystemOrchestrator : BaseOrchestrator
         try
         {
             // Stop in reverse order
+            
+            var protocols = ServiceProvider.GetService<ProtocolOrchestrator>();
+            if (protocols != null)
+            {
+                await protocols.StopAsync(cancellationToken);
+                LogInfo("✅ Protocols stopped");
+            }
             
             var notificationOrchestrator = ServiceProvider.GetRequiredService<NotificationOrchestrator>();
             await notificationOrchestrator.StopAsync(cancellationToken);

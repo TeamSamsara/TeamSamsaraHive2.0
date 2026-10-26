@@ -33,7 +33,7 @@ public class ConfigurationOrchestrator : BaseOrchestrator
         
         await RegisterSlashCommandsAsync();
         
-        _discord.Client.SlashCommandExecuted += HandleSlashCommandAsync;
+        _discord.Interactions.OnSlashCommand("config", HandleSlashCommandAsync);
         
         IsInitialized = true;
         LogInfo("Configuration Orchestrator initialized successfully");
