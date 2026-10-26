@@ -107,7 +107,10 @@ public class StreamMonitorService : BackgroundService
                 stream.LastOfflineAtUtc = DateTime.UtcNow;
                 await repository.UpdateAsync(stream);
 
-                var startedAt = _liveSince.TryGetValue(stream.TwitchUsername, out var started) ? started : DateTime.UtcNow;
+                // _liveSince is lost on restart; fall back to the saved go-live time
+                var startedAt = _liveSince.TryGetValue(stream.TwitchUsername, out var started)
+                    ? started
+                    : stream.LastLiveAtUtc ?? DateTime.UtcNow;
                 var duration = (int)(DateTime.UtcNow - startedAt).TotalMinutes;
                 _liveSince.Remove(stream.TwitchUsername);
 

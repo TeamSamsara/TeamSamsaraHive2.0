@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TeamSamsara.Hive.Bot.Tickets.Models.Entities;
@@ -12,7 +11,7 @@ namespace TeamSamsara.Hive.Bot.Tickets.Data;
 // Implements ticket-specific state machine rules and audit trail
 public class TicketTransitionService : StatusTransitionService
 {
-    private readonly TicketDbContext _context;
+    private readonly IStatusTransitionStore _store;
 
     public override string ServiceName => "TicketTransitionService";
     
@@ -21,10 +20,10 @@ public class TicketTransitionService : StatusTransitionService
     public TicketTransitionService(
         ILogger<TicketTransitionService> logger, 
         IConfiguration configuration,
-        TicketDbContext context) 
+        IStatusTransitionStore store) 
         : base(logger, configuration)
     {
-        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _store = store ?? throw new ArgumentNullException(nameof(store));
     }
     
     #endregion
@@ -36,23 +35,9 @@ public class TicketTransitionService : StatusTransitionService
     {
         try
         {
-            // Create entity from model
-            var entity = new StatusTransitionEntity
-            {
-                SubmissionId = transition.SubmissionId,
-                SubmissionType = transition.SubmissionType,
-                FromStatus = transition.FromStatus,
-                ToStatus = transition.ToStatus,
-                TransitionedAtUtc = transition.TransitionedAtUtc,
-                TransitionedByUserId = transition.TransitionedByUserId,
-                TransitionedByUsername = transition.TransitionedByUsername,
-                Notes = transition.Notes,
-                ReasonCode = transition.ReasonCode
-            };
-            
-            _context.StatusTransitions.Add(entity);
-            await _context.SaveChangesAsync();
-            
+            // Storage depends on the configured database (SQLite or Firestore)
+            await _store.SaveAsync(transition);
+
             LogInfo("Status transition saved: {SubmissionType} {SubmissionId} from {FromStatus} to {ToStatus}",
                 transition.SubmissionType, transition.SubmissionId, transition.FromStatus, transition.ToStatus);
             
@@ -71,26 +56,8 @@ public class TicketTransitionService : StatusTransitionService
     {
         try
         {
-            var entities = await _context.StatusTransitions
-                .Where(t => t.SubmissionId == submissionId)
-                .OrderByDescending(t => t.TransitionedAtUtc)
-                .ToListAsync();
-            
-            // Convert entities to models
-            var transitions = entities.Select(e => new StatusTransition
-            {
-                SubmissionId = e.SubmissionId,
-                SubmissionType = e.SubmissionType,
-                FromStatus = e.FromStatus,
-                ToStatus = e.ToStatus,
-                TransitionedAtUtc = e.TransitionedAtUtc,
-                TransitionedByUserId = e.TransitionedByUserId,
-                TransitionedByUsername = e.TransitionedByUsername,
-                Notes = e.Notes,
-                ReasonCode = e.ReasonCode
-            }).ToList();
-            
-            return transitions;
+            // Newest first, from whichever database is configured
+            return await _store.GetForSubmissionAsync(submissionId);
         }
         catch (Exception ex)
         {

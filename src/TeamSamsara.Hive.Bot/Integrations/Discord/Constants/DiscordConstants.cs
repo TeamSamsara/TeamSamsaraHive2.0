@@ -6,11 +6,12 @@ public static class DiscordConstants
     // Configuration Keys (for appsettings.json)
     public const string BotTokenConfigKey = "Discord:BotToken";
     
-    // Reconnection Settings
-    public const int MaxReconnectAttempts = 5;
-    public const int InitialReconnectDelayMs = 1000;      // 1 second
-    public const int MaxReconnectDelayMs = 16000;         // 16 seconds
-    public const double ReconnectBackoffMultiplier = 2.0; // Exponential backoff
+    // Connection Watchdog Settings
+    // Discord.Net reconnects on its own. The watchdog only steps in if the bot
+    // has stayed disconnected this long, by stopping the app so the host
+    // (Render) restarts it with a fresh connection.
+    public const int DisconnectedRestartMinutes = 5;
+    public const int WatchdogCheckIntervalSeconds = 30;
     
     // Timeout Settings
     public const int ReadyTimeoutSeconds = 30;            // Max wait for Ready event
@@ -25,10 +26,8 @@ public static class DiscordConstants
     public const string LogPrefix = "[DiscordIntegration]";
     public const string InitializingMessage = "Initializing Discord integration...";
     public const string ConnectedMessage = "Discord bot connected successfully";
-    public const string DisconnectedMessage = "Discord bot disconnected";
-    public const string ReconnectingMessage = "Attempting to reconnect to Discord (Attempt {0}/{1})";
-    public const string ReconnectSuccessMessage = "Successfully reconnected to Discord";
-    public const string ReconnectFailedMessage = "Failed to reconnect to Discord after {0} attempts";
+    public const string DisconnectedMessage = "Discord bot disconnected - Discord.Net will reconnect automatically";
+    public const string WatchdogRestartMessage = "Discord has been disconnected for {Minutes:F1} minutes - stopping the app so the host restarts it";
     public const string ReadyTimeoutMessage = "Timed out waiting for Discord Ready event";
     public const string HealthCheckFailedMessage = "Discord health check failed - not connected";
 }

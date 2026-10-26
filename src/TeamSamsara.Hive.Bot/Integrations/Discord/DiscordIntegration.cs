@@ -1,6 +1,7 @@
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TeamSamsara.Hive.Bot.Integrations.Discord.Constants;
 using TeamSamsara.Hive.Core.Abstractions;
@@ -8,24 +9,38 @@ using TeamSamsara.Hive.Core.Abstractions;
 namespace TeamSamsara.Hive.Bot.Integrations.Discord;
 
 // Integration for Discord Bot using Discord.Net
-// Wraps Discord WebSocket client with reconnection logic
+// Wraps the Discord WebSocket client. Reconnecting is left entirely to
+// Discord.Net; this class only watches for a connection that stays down.
 public class DiscordIntegration : BaseIntegration
 {
     private readonly IConfiguration _configuration;
+    private readonly IHostApplicationLifetime _lifetime;
     private DiscordSocketClient _client = null!;
     private TaskCompletionSource<bool> _readyTaskSource = null!;
-    private int _reconnectAttempts;
-    private bool _isReconnecting;
     private string _botToken = string.Empty;
+
+    // UTC ticks of when the current outage started; 0 while connected.
+    // Written from Discord.Net's event threads and read by the watchdog,
+    // so it is only touched through Interlocked.
+    private long _disconnectedSinceTicks;
+    private readonly CancellationTokenSource _watchdogCts = new();
     public DiscordSocketClient Client => _client;
     public override string IntegrationName => "Discord";
 
     #region Constructor
 
-    public DiscordIntegration(HttpClient httpClient, ILogger<DiscordIntegration> logger, IConfiguration configuration)
+    public DiscordIntegration(
+        HttpClient httpClient,
+        ILogger<DiscordIntegration> logger,
+        IConfiguration configuration,
+        IHostApplicationLifetime lifetime)
         : base(httpClient, logger)
     {
         _configuration = configuration;
+        _lifetime = lifetime;
+
+        // Stop watching once the app is shutting down on purpose
+        _lifetime.ApplicationStopping.Register(() => _watchdogCts.Cancel());
     }
 
     #endregion
@@ -66,6 +81,10 @@ public class DiscordIntegration : BaseIntegration
         }
 
         IsInitialized = true;
+
+        // Start watching for a connection that stays down
+        _ = RunWatchdogAsync(_watchdogCts.Token);
+
         Logger.LogInformation($"{DiscordConstants.LogPrefix} Initialized successfully");
     }
 
@@ -192,82 +211,77 @@ public class DiscordIntegration : BaseIntegration
 
     #endregion
 
-    #region Reconnection Logic
+    #region Connection Watchdog
+
+    // Discord.Net reconnects by itself whenever the gateway drops. Discord asks
+    // every bot to reconnect every few hours, so disconnects are normal.
+    //
+    // We must NOT call _client.StartAsync() ourselves when that happens: it
+    // races the library's own reconnect and can leave its connection manager
+    // broken (ObjectDisposedException / "Cannot start an already running
+    // client"), which is what silently took the bot offline on 2026-10-26.
+    //
+    // So these handlers only record the outage. If it lasts longer than
+    // DisconnectedRestartMinutes, the watchdog stops the app with exit code 1
+    // and the host (Render) starts a fresh process.
 
     // Handle client connected event
     private Task OnConnected()
     {
+        Interlocked.Exchange(ref _disconnectedSinceTicks, 0);
         Logger.LogInformation($"{DiscordConstants.LogPrefix} Connected to Discord");
-
-        // Reset reconnection state on successful connection
-        _reconnectAttempts = 0;
-        _isReconnecting = false;
-
         return Task.CompletedTask;
     }
 
     // Handle client disconnected event
     private Task OnDisconnected(Exception exception)
     {
+        // Keep the time of the FIRST disconnect if several fire in a row
+        Interlocked.CompareExchange(ref _disconnectedSinceTicks, DateTime.UtcNow.Ticks, 0);
         Logger.LogWarning(exception, $"{DiscordConstants.LogPrefix} {DiscordConstants.DisconnectedMessage}");
-
-        // Start reconnection process if not already reconnecting
-        if (!_isReconnecting)
-        {
-            _isReconnecting = true;
-            _ = Task.Run(async () => await AttemptReconnectAsync());
-        }
-
         return Task.CompletedTask;
     }
 
-    // Attempt to reconnect to Discord with exponential backoff
-    private async Task AttemptReconnectAsync()
+    // Periodically check whether the bot has been disconnected for too long
+    private async Task RunWatchdogAsync(CancellationToken cancellationToken)
     {
-        while (_reconnectAttempts < DiscordConstants.MaxReconnectAttempts)
+        var threshold = TimeSpan.FromMinutes(DiscordConstants.DisconnectedRestartMinutes);
+        var interval = TimeSpan.FromSeconds(DiscordConstants.WatchdogCheckIntervalSeconds);
+
+        try
         {
-            _reconnectAttempts++;
-
-            Logger.LogInformation(
-                DiscordConstants.ReconnectingMessage,
-                _reconnectAttempts,
-                DiscordConstants.MaxReconnectAttempts
-            );
-
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                // Calculate delay with exponential backoff
-                var delay = CalculateReconnectDelay(_reconnectAttempts);
-                await Task.Delay(delay);
+                await Task.Delay(interval, cancellationToken);
 
-                // Attempt reconnection
-                await _client.StartAsync();
-
-                // Wait a moment to see if connection succeeds
-                await Task.Delay(2000);
-
-                if (_client.ConnectionState == ConnectionState.Connected)
+                var sinceTicks = Interlocked.Read(ref _disconnectedSinceTicks);
+                if (sinceTicks == 0)
                 {
-                    Logger.LogInformation($"{DiscordConstants.LogPrefix} {DiscordConstants.ReconnectSuccessMessage}");
-                    _reconnectAttempts = 0;
-                    _isReconnecting = false;
-                    return;
+                    continue; // connected
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, $"{DiscordConstants.LogPrefix} Reconnection attempt failed");
+
+                var downFor = DateTime.UtcNow - new DateTime(sinceTicks, DateTimeKind.Utc);
+                if (downFor < threshold)
+                {
+                    continue; // give Discord.Net time to reconnect
+                }
+
+                Logger.LogCritical($"{DiscordConstants.LogPrefix} {DiscordConstants.WatchdogRestartMessage}", downFor.TotalMinutes);
+
+                IsInitialized = false;
+                Environment.ExitCode = 1;   // non-zero so the host treats it as a crash and restarts
+                _lifetime.StopApplication();
+                return;
             }
         }
-
-        // Max attempts reached
-        Logger.LogCritical(
-            DiscordConstants.ReconnectFailedMessage,
-            DiscordConstants.MaxReconnectAttempts
-        );
-
-        IsInitialized = false;
-        _isReconnecting = false;
+        catch (OperationCanceledException)
+        {
+            // App is shutting down
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, $"{DiscordConstants.LogPrefix} Connection watchdog stopped unexpectedly");
+        }
     }
 
     #endregion
@@ -304,15 +318,6 @@ public class DiscordIntegration : BaseIntegration
 
         // Discord.Net internal logging
         _client.Log += LogDiscordMessage;
-    }
-
-    // Calculate reconnection delay with exponential backoff
-    private int CalculateReconnectDelay(int attemptNumber)
-    {
-        var delay = (int)(DiscordConstants.InitialReconnectDelayMs *
-        Math.Pow(DiscordConstants.ReconnectBackoffMultiplier, attemptNumber - 1));
-
-        return Math.Min(delay, DiscordConstants.MaxReconnectDelayMs);
     }
 
     // Forward Discord.Net log messages to Microsoft logging framework
