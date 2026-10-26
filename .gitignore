@@ -151,3 +151,6 @@ logs/
 # redundant and actively harmful.
 # Migration backups
 Migrations/backup/
+# Firebase / Google service account keys - never commit
+*firebase-adminsdk*.json
+*service-account*.json

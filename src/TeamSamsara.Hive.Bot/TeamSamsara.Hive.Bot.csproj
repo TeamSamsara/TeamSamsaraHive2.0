@@ -14,6 +14,7 @@
     <PackageReference Include="Discord.Net.Commands" Version="3.16.0" />
     <PackageReference Include="Discord.Net.Interactions" Version="3.16.0" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
+    <PackageReference Include="Google.Cloud.Firestore" Version="4.5.0" />
 
     <!-- Pin Humanizer.Core: 3.0.1 (and later 3.0.x) is a broken NuGet release
          with no supported framework assets, which breaks restore for any

@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Google.Cloud.Firestore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,6 +10,8 @@ using TeamSamsara.Hive.Bot.Configuration;
 using TeamSamsara.Hive.Bot.Configuration.Data;
 using TeamSamsara.Hive.Bot.Configuration.Repositories;
 using TeamSamsara.Hive.Bot.Configuration.Services;
+using TeamSamsara.Hive.Bot.Database;
+using TeamSamsara.Hive.Bot.Database.Firestore;
 using TeamSamsara.Hive.Bot.Integrations.Discord;
 using TeamSamsara.Hive.Bot.Integrations.Twitch;
 using TeamSamsara.Hive.Bot.Tickets;
@@ -22,6 +25,13 @@ using TeamSamsara.Hive.Bot.Streams.Services;
 using TeamSamsara.Hive.Bot.Notifications;
 using TeamSamsara.Hive.Core.EventBus;
 using TeamSamsara.Hive.Core.Workflows.Abstractions;
+
+// Load local settings from a .env file, if there is one (searched for in the
+// current folder and its parents, so `dotnet run` from the project folder
+// finds the .env at the repo root). .env is git-ignored and is never deployed,
+// so on Render this does nothing. NoClobber: real environment variables
+// always win over .env values.
+DotNetEnv.Env.NoClobber().TraversePath().Load();
 
 // Determine environment
 var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -61,6 +71,24 @@ var host = Host.CreateDefaultBuilder(args)
         var configuration = context.Configuration;
         
         // ═══════════════════════════════════════════════════════
+        // DATABASE PROVIDER
+        // ═══════════════════════════════════════════════════════
+        // Database:Provider picks the storage backend: "Sqlite" (local files,
+        // wiped on every Render restart on the free plan) or "Firestore"
+        // (survives restarts). Only the repository registrations below differ.
+        var databaseSettings = DatabaseSettings.FromConfiguration(configuration);
+        var useFirestore = databaseSettings.Provider == DatabaseProvider.Firestore;
+        services.AddSingleton(databaseSettings);
+        
+        if (useFirestore)
+        {
+            // One shared, thread-safe client for the whole bot
+            services.AddSingleton<FirestoreDb>(sp => FirestoreFactory.Create(
+                databaseSettings,
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Firestore")));
+        }
+        
+        // ═══════════════════════════════════════════════════════
         // CORE INFRASTRUCTURE
         // ═══════════════════════════════════════════════════════
         services.AddSingleton<EventBus>();
@@ -86,7 +114,11 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<ConfigurationQueryOptimizer>();
         
         // Repositories
-        services.AddScoped<IConfigurationRepository, ConfigurationRepository>();
+        // Firestore version is a singleton because it keeps an in-memory cache
+        if (useFirestore)
+            services.AddSingleton<IConfigurationRepository, FirestoreConfigurationRepository>();
+        else
+            services.AddScoped<IConfigurationRepository, ConfigurationRepository>();
         
         // Services
         services.AddScoped<GetConfigValueService>();
@@ -111,7 +143,16 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IStatusTransition, TicketTransitionService>();
         
         // Repositories
-        services.AddScoped<ITicketRepository, TicketRepository>();
+        if (useFirestore)
+        {
+            services.AddScoped<ITicketRepository, FirestoreTicketRepository>();
+            services.AddScoped<IStatusTransitionStore, FirestoreStatusTransitionStore>();
+        }
+        else
+        {
+            services.AddScoped<ITicketRepository, TicketRepository>();
+            services.AddScoped<IStatusTransitionStore, SqliteStatusTransitionStore>();
+        }
         
         // Services
         services.AddScoped<TicketService>();
@@ -131,7 +172,11 @@ var host = Host.CreateDefaultBuilder(args)
             options.UseSqlite($"Data Source={DataDirectory}/streams.db"));
         
         // Repository
-        services.AddScoped<IStreamRepository, StreamRepository>();
+        // Firestore version is a singleton because it keeps an in-memory cache
+        if (useFirestore)
+            services.AddSingleton<IStreamRepository, FirestoreStreamRepository>();
+        else
+            services.AddScoped<IStreamRepository, StreamRepository>();
         
         // Services
         services.AddScoped<AddStreamService>();
@@ -183,9 +228,19 @@ try
     // ═══════════════════════════════════════════════════════
     // DATABASE INITIALIZATION
     // ═══════════════════════════════════════════════════════
+    var databaseSettings = host.Services.GetRequiredService<DatabaseSettings>();
+    
+    if (databaseSettings.Provider == DatabaseProvider.Firestore)
+    {
+        // Fail fast if the key, project ID or database is wrong
+        Console.WriteLine("Connecting to Firestore...");
+        await FirestoreFactory.VerifyConnectionAsync(host.Services.GetRequiredService<FirestoreDb>());
+        Console.WriteLine($"✅ Firestore ready (project {databaseSettings.FirestoreProjectId})\n");
+    }
+    else
     using (var scope = host.Services.CreateScope())
     {
-        Console.WriteLine("Initializing databases...");
+        Console.WriteLine("Initializing SQLite databases...");
         
         // Initialize Configuration Database
         var configDb = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
@@ -262,7 +317,9 @@ finally
     }
 }
 
-return 0;
+// 0 on a normal shutdown; 1 if something (e.g. the Discord connection
+// watchdog) stopped the app because it needs a restart.
+return Environment.ExitCode;
 
 // Checks whether TrackedStreams.NotificationRoleId exists via PRAGMA table_info,
 // and adds it with ALTER TABLE if it's missing. Lets the per-stream role-ping
