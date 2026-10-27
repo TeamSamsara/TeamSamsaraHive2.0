@@ -25,6 +25,7 @@ using TeamSamsara.Hive.Bot.Streams.Services;
 using TeamSamsara.Hive.Bot.Notifications;
 using TeamSamsara.Hive.Bot.Protocols;
 using TeamSamsara.Hive.Bot.Protocols.Repositories;
+using TeamSamsara.Hive.Bot.Protocols.Templates;
 using TeamSamsara.Hive.Core.EventBus;
 using TeamSamsara.Hive.Core.Workflows.Abstractions;
 
@@ -219,6 +220,8 @@ var host = Host.CreateDefaultBuilder(args)
         if (useFirestore)
         {
             services.AddSingleton<IProtocolSettingsRepository, FirestoreProtocolSettingsRepository>();
+            services.AddSingleton<ITemplateRepository, FirestoreTemplateRepository>();
+            services.AddSingleton<TemplateCommandHandler>();
             services.AddSingleton<ProtocolOrchestrator>();
         }
         

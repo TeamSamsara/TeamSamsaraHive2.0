@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using TeamSamsara.Hive.Bot.Integrations.Discord;
 using TeamSamsara.Hive.Bot.Protocols.Models;
 using TeamSamsara.Hive.Bot.Protocols.Repositories;
+using TeamSamsara.Hive.Bot.Protocols.Templates;
 using TeamSamsara.Hive.Core.Abstractions;
 using TeamSamsara.Hive.Core.Utilities;
 
@@ -13,10 +14,10 @@ namespace TeamSamsara.Hive.Bot.Protocols;
 
 // Root orchestrator for the protocols feature (checklists, planning, reminders).
 //
-// Phase 0 provides the server setup:
 //   /protocol setup     category, calendar channel, digest channel, time zone, planner role
 //   /protocol settings  show the current setup
 //   /protocol role set | remove | list   owner names ("Design") -> Discord roles
+//   /template ...       checklist templates (TemplateCommandHandler)
 public class ProtocolOrchestrator : BaseOrchestrator
 {
     private const string CommandName = "protocol";
@@ -34,18 +35,24 @@ public class ProtocolOrchestrator : BaseOrchestrator
 
     private readonly DiscordIntegration _discord;
     private readonly IProtocolSettingsRepository _settings;
+    private readonly ITemplateRepository _templates;
+    private readonly TemplateCommandHandler _templateCommands;
 
     public override string SystemName => "Protocols";
 
     public ProtocolOrchestrator(
         DiscordIntegration discord,
         IProtocolSettingsRepository settings,
+        ITemplateRepository templates,
+        TemplateCommandHandler templateCommands,
         ILogger<ProtocolOrchestrator> logger,
         IServiceProvider serviceProvider)
         : base(logger, serviceProvider)
     {
         _discord = discord ?? throw new ArgumentNullException(nameof(discord));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _templates = templates ?? throw new ArgumentNullException(nameof(templates));
+        _templateCommands = templateCommands ?? throw new ArgumentNullException(nameof(templateCommands));
     }
 
     #region Lifecycle
@@ -58,6 +65,7 @@ public class ProtocolOrchestrator : BaseOrchestrator
         _discord.Interactions.OnAutocomplete(CommandName, HandleAutocompleteAsync);
 
         await RegisterCommandAsync();
+        await _templateCommands.RegisterAsync();
 
         // Load settings now so a broken database shows up at startup
         var settings = await _settings.GetAsync();
@@ -67,7 +75,8 @@ public class ProtocolOrchestrator : BaseOrchestrator
                 settings.TimeZoneId);
         }
 
-        LogInfo("Protocols initialized");
+        var templates = await _templates.GetAllAsync();
+        LogInfo("Protocols initialized ({Count} template(s))", templates.Count);
     }
 
     private async Task RegisterCommandAsync()
@@ -81,7 +90,7 @@ public class ProtocolOrchestrator : BaseOrchestrator
 
         var command = new SlashCommandBuilder()
             .WithName(CommandName)
-            .WithDescription("Social checklists: setup, owners, and (later) templates and planning")
+            .WithDescription("Social checklists: setup and owner roles (templates live in /template)")
             .WithDefaultMemberPermissions(GuildPermission.Administrator)
             .AddOption(new SlashCommandOptionBuilder()
                 .WithName("setup")
@@ -322,7 +331,20 @@ public class ProtocolOrchestrator : BaseOrchestrator
             return;
         }
 
-        // Phase 1: also check whether any template still uses this owner
+        // Templates refer to owners by name, so removing one still in use would orphan those steps
+        var usedBy = (await _templates.GetAllAsync())
+            .Select(t => (t.Name, Count: t.Steps.Count(s => string.Equals(s.Owner, existing.Name, StringComparison.OrdinalIgnoreCase))))
+            .Where(x => x.Count > 0)
+            .ToList();
+        if (usedBy.Count > 0)
+        {
+            await command.FollowupAsync(
+                $"**{existing.Name}** is still the owner of steps in: {string.Join(", ", usedBy.Select(u => $"**{u.Name}** ({u.Count})"))}.\n" +
+                $"Give those steps another owner first, or point **{existing.Name}** at a different role with `/protocol role set`.",
+                ephemeral: true);
+            return;
+        }
+
         settings.OwnerRoles.Remove(existing);
         StampUpdate(settings, command.User);
         await _settings.SaveAsync(settings);

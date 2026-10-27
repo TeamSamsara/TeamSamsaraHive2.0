@@ -12,6 +12,7 @@ public static class FirestoreCollections
     public const string StatusTransitions = "statusTransitions";
     public const string Counters = "counters";
     public const string ProtocolSettings = "protocolSettings";
+    public const string ProtocolTemplates = "protocolTemplates";
 }
 
 // Conversions between entity property types and Firestore field values.
